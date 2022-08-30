@@ -16,8 +16,8 @@ Theorem hmm : forall (a b c : bool),
          else True.
 Proof.
   intros.
-  (* every successful call to repeat_if will automatically cause a
-  simplification *)
+  (* every successful call to repeat_if will automatically cause a *)
+(*   simplification *)
   repeat find_if; constructor.
 Qed.
 
@@ -159,17 +159,36 @@ Ltac2 tuple_plus_one xy :=
   | (?x, ?y) => '($x + 1, $y + 1)
   end.
 
-(* so you can match Gallina tuples, but then what does the
-documentation mean when it says you can't match on tuples? Ltac2
-doesn't really have a tuple data type of its own so I don't know what
-else it refers to *)
+(* so you can match Gallina tuples, but then what does the *)
+(* documentation mean when it says you can't match on tuples? Ltac2 *)
+(* doesn't really have a tuple data type of its own so I don't know what *)
+(* else it refers to *)
 
 Ltac2 Eval tuple_plus_one '(1,2).
 
-Print Ltac2 Fresh.fresh.
+Ltac2 Notation x(self) "++" y(self) := Message.concat x y.
+
+
+From Coq Require Import Lia.
+
+
+
+
+
+
+
+
+Local Ltac2 lia_ltac1 () := ltac1:(lia).
+
+Ltac2 Notation "lia" := lia_ltac1 ().
+
 
 From Hammer Require Import Tactics.
 
-Theorem false : forall x, x + 0 = x + 1.
+Local Ltac2 best_ltac1 () := ltac1:(best).
+
+Ltac2 Notation "best" := best_ltac1 ().
+
+Theorem false : forall x, x + 0 = x.
 Proof.
-  induction x.
+  best.
