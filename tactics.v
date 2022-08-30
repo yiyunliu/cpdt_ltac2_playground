@@ -77,10 +77,20 @@ Section with_x.
   Ltac2 Eval foo ().
   (* whatever goes in ltac2: must be an effect *)
   (* which is why this does not work *)
+
+  Ltac2 Eval Fresh.in_goal @x.
+  Ltac2 Eval Fresh.in_goal @y.
+
+
   Goal True.
+    (* how to use fresh/gensym in ltac2 *)
+  let h := Fresh.in_goal @H in
+  pose ($h := 4).
+
     (* pose ltac2:(foo'' ()). *)
     (* Error: Cannot infer an existential variable of type "?T" in environment: *)
     (* If you get the above message, just ignore it. It makes no sense *)
+
 Abort.
 
 End with_x.
@@ -155,3 +165,11 @@ doesn't really have a tuple data type of its own so I don't know what
 else it refers to *)
 
 Ltac2 Eval tuple_plus_one '(1,2).
+
+Print Ltac2 Fresh.fresh.
+
+From Hammer Require Import Tactics.
+
+Theorem false : forall x, x + 0 = x + 1.
+Proof.
+  induction x.
