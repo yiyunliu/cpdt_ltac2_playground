@@ -55,6 +55,7 @@ Ltac2 idtac () := ().
 Ltac2 hello_world () := Message.print (Message.of_string "Debugging info").
 
 Goal True.
+
   hello_world ().
 Abort.
 
@@ -244,9 +245,9 @@ Proof.
 
 
   (* This approach should be quite straightforward *)
-  (* Local Hint Extern 1 => ltac2: (match! goal with *)
-  (*                               | [|- _ = ?x + 0] => rewrite <- (plus_n_O $x) *)
-  (*                              end) : db. *)
+  Local Hint Extern 1 => ltac2: (match! goal with
+                                | [|- _ = ?x + 0] => rewrite <- (plus_n_O $x)
+                               end) : db.
 
   (* x is a ltac1 symbol. We need to use (... |- ...) construct to allow ltac2 access to the x *)
   Local Hint Extern 1 (_ = ?x + 0)
@@ -276,3 +277,206 @@ Theorem swap {A B : Prop} : A * B -> B * A.
 Proof.
   tauto.
 Qed.
+
+
+Module Type GROUP.
+  Parameter G : Set.
+  Parameter f : G -> G -> G.
+  Parameter id : G.
+  Parameter i : G -> G.
+
+  Axiom assoc : forall a b c, f (f a b) c = f a (f b c).
+  Axiom ident : forall a, f id a = a.
+  Axiom inverse : forall a, f (i a) a = id.
+End GROUP.
+
+Module Type GROUP_THEOREMS.
+  Declare Module M : GROUP.
+  Axiom ident' : forall a, M.f a M.id = a.
+  Axiom inverse' : forall a, M.f a (M.i a) = M.id.
+  Axiom unique_ident : forall id', (forall a, M.f id' a = a) -> id' = M.id.
+End GROUP_THEOREMS.
+
+Module Type GROUP_THEOREMS_F (M : GROUP).
+  Axiom ident' : forall a, M.f a M.id = a.
+  Axiom inverse' : forall a, M.f a (M.i a) = M.id.
+  Axiom unique_ident : forall id', (forall a, M.f id' a = a) -> id' = M.id.
+End GROUP_THEOREMS_F.
+
+Module Type GROUP_THEOREMS'.
+  Declare Module M : GROUP.
+
+  Set Default Proof Mode "Ltac2".
+  Theorem inverse' : forall a, M.f a (M.i a) = M.id.
+  Proof.
+    Import M.
+    intros.
+    rewrite <- (ident (f a (i a))).
+    rewrite <- (inverse (f a (i a))) at 1.
+    do 2 (rewrite assoc).
+    rewrite <- (assoc (i a) a (i a)).
+    rewrite inverse.
+    rewrite ident.
+    apply inverse.
+  Qed.
+
+  Theorem ident' : forall a, M.f a M.id = a.
+  Proof.
+    intros a.
+    rewrite <- (inverse a).
+    rewrite <- assoc.
+    rewrite inverse'.
+    apply ident.
+  Qed.
+
+  Theorem unique_ident : forall id', (forall a, M.f id' a = a) -> id' = M.id.
+  Proof.
+    intros.
+    rewrite <- (H id).
+    symmetry.
+    apply ident'.
+  Qed.
+
+End GROUP_THEOREMS'.
+
+Inductive taut : Set :=
+| TautTrue : taut
+| TautAnd : taut -> taut -> taut
+| TautOr : taut -> taut -> taut
+| TautImp : taut -> taut -> taut.
+
+Fixpoint tautDenote (t : taut) : Prop :=
+  match t with
+  | TautTrue => True
+  | TautAnd t1 t2 => tautDenote t1 /\ tautDenote t2
+  | TautOr t1 t2 => tautDenote t1 \/ tautDenote t2
+  | TautImp t1 t2 => tautDenote t1 -> tautDenote t2
+  end.
+
+
+Set Default Proof Mode "Ltac2".
+Theorem tautTrue : forall t : taut, tautDenote t.
+  induction t; ltac1:(fcrush).
+Qed.
+
+Ltac2 rec tautReify (p : constr) : constr :=
+  lazy_match! p with
+  | True => 'TautTrue
+  | ?p1 /\ ?p2 =>
+      let t1 := tautReify p1 in
+      let t2 := tautReify p2 in
+      '(TautAnd $t1 $t2)
+  | ?p1 \/ ?p2 =>
+      let t1 := tautReify p1 in
+      let t2 := tautReify p2 in
+      '(TautOr $t1 $t2)
+  | ?p1 -> ?p2 =>
+      let t1 := tautReify p1 in
+      let t2 := tautReify p2 in
+      '(TautImp $t1 $t2)
+  end.
+
+Print Ltac2 tautReify.
+
+Ltac2 solve_taut () :=
+  lazy_match! goal with
+  | [|- ?p] =>
+      let t := tautReify p in
+      let proof := '(tautTrue $t) in
+      exact $proof
+  end.
+
+Ltac2 Notation "solve_taut" := solve_taut ().
+
+Theorem true_galore :  (True /\ True) -> (True \/ (True /\ (True -> True))).
+Proof.
+  solve_taut.
+Qed.
+
+
+Print true_galore.
+
+Module Type monoid.
+  Parameter A : Set.
+  Parameter e : A.
+  Parameter f : A -> A -> A.
+
+  Inductive mexp : Set :=
+  | Ident : mexp
+  | Var : A -> mexp
+  | Op : mexp -> mexp -> mexp.
+
+  Infix "+" := f.
+
+  Ltac2 rec mexpReify (m : constr) : constr :=
+    lazy_match! m with
+    | e => 'Ident
+    | ?a + ?b => let a := mexpReify a in
+                let b := mexpReify b in
+                '(Op $a $b)
+    | ?e => '(Var $e)
+    end.
+
+  Axiom assoc : forall a b c, (a + b) + c = a + (b + c).
+  Axiom identl : forall a, e + a = a.
+  Axiom identr : forall a, a + e = a.
+
+  (* The ltac function and mdenote really should be an isomorphism *)
+  Fixpoint mdenote (me : mexp) : A :=
+    match me with
+    | Ident => e
+    | Var v => v
+    | Op me1 me2 => mdenote me1 + mdenote me2
+    end.
+
+  Fixpoint flatten (me : mexp) : list A :=
+    match me with
+    | Ident => nil
+    | Var x => x :: nil
+    | Op me1 me2 => flatten me1 ++ flatten me2
+    end.
+
+  Fixpoint mldenote (ms : list A) : A :=
+    match ms with
+    | [] => e
+    | m::ms => m + mldenote ms
+    end.
+
+  Lemma flatten_correct': forall ml1 ml2,
+      mldenote ml1 + mldenote ml2 = mldenote (ml1 ++ ml2).
+  Proof.
+    Local Hint Rewrite <- assoc : flatten_db.
+    Local Hint Rewrite -> identl : flatten_db.
+    Local Hint Rewrite -> identr : flatten_db.
+    induction ml1;
+      ltac1:(fcrush db: flatten_db).
+  Qed.
+
+  Lemma flatten_correct :  forall me, mdenote me = mldenote (flatten me).
+  Proof.
+    induction me; ltac1:(fcrush use:flatten_correct' rew:db:flatten_db).
+  Qed.
+
+  Theorem monoid_reflect : forall me1 me2,
+      mldenote (flatten me1) = mldenote (flatten me2)
+      -> mdenote me1 = mdenote me2.
+  Proof.
+    ltac1:(sfirstorder use:flatten_correct).
+  Qed.
+
+  Ltac2 solve_monoid () : unit :=
+    lazy_match! goal with
+    | [ |- ?m1 = ?m2 ] =>
+        let me1 := mexpReify m1 in
+        let me2 := mexpReify m2 in
+        apply monoid_reflect with (me1 := $me1) (me2 := $me2);
+        reflexivity
+    end.
+
+  Theorem monoid3 : forall x : A, x + (e + x) + x = x + e + (x + x) + e.
+  Proof.
+    intros.
+    solve_monoid ().
+  Qed.
+
+End monoid.
