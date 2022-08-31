@@ -192,3 +192,87 @@ Ltac2 Notation "best" := best_ltac1 ().
 Theorem false : forall x, x + 0 = x.
 Proof.
   best.
+Qed.
+
+
+
+Ltac length ls :=
+  match ls with
+  | nil => O
+  | cons _ ?ls => let l := length ls in
+              constr:(S l)
+  end.
+
+(* Goal False. *)
+(*   let n := length (cons 1 (cons 2 (cons 3 nil))) in *)
+(*   pose n. *)
+
+Require Import Coq.Lists.List.
+
+Ltac map T f :=
+  (* f is an ltac function from gallina terms to gallina terms *)
+  (* ls is a gallina term *)
+  let rec map' ls :=
+    match ls with
+    (* can't ignore T because constr: immediatley forces nil to be typed *)
+    | nil => constr:(@nil T)
+    | ?x :: ?xs =>
+        let xs' := map' xs in
+        let x' := f x in
+        constr: (x' :: xs')
+    end
+  in map'.
+
+(* Goal False. *)
+(*   let n := map nat ltac:(fun x => constr:(S x)) (cons 1 (cons 2 (cons 3 nil))) in *)
+(*   pose n. *)
+(* Abort. *)
+
+
+
+Theorem simple_eq : forall x, x = x + 0 + 0.
+Proof.
+  intros x.
+  repeat (rewrite <- plus_n_O).
+  reflexivity.
+Qed.
+
+
+Theorem simple_eq' : forall x, x = x + 0 + 0.
+Proof.
+  intros x.
+
+
+  (* This approach should be quite straightforward *)
+  (* Local Hint Extern 1 => ltac2: (match! goal with *)
+  (*                               | [|- _ = ?x + 0] => rewrite <- (plus_n_O $x) *)
+  (*                              end) : db. *)
+
+  (* x is a ltac1 symbol. We need to use (... |- ...) construct to allow ltac2 access to the x *)
+  Local Hint Extern 1 (_ = ?x + 0)
+        => let f := ltac2:(x |- let x := Option.get (Ltac1.to_constr x) in
+                              rewrite <- (plus_n_O $x))
+          in f x : db.
+
+  auto with db.
+Qed.
+
+
+Ltac2 Type sauto_opts :=
+  { inv : bool
+  ; lq : bool }.
+
+Ltac2 sauto_defopts : sauto_opts := {inv := true; lq := true}.
+
+Ltac2 Eval Int.equal (Int.add 1 2) 3.
+
+(* Print simple_eq. *)
+
+(* Ltac2 length ls := *)
+
+
+Set Default Proof Mode "Classic".
+Theorem swap {A B : Prop} : A * B -> B * A.
+Proof.
+  tauto.
+Qed.
