@@ -545,7 +545,34 @@ Require Coq.Program.Wf.
 
 Local Obligation Tactic := try (sauto).
 
-Fixpoint splitLeq {A : Set} {_:Lattice A} (e1 : lexp A) : lexp A -> Prop :=
+Inductive splitLeqRel {A : Set} {H:Lattice A} : lexp A -> lexp A -> Prop -> Prop :=
+| splitVarVar (a1 a2 : A) :
+  splitLeqRel (Var a1) (Var a2) (leq_lat a1 a2)
+| splitJoinAny (e11 e12 e2 : lexp A) (p1 p2 : Prop) :
+  splitLeqRel e11 e2 p1 ->
+  splitLeqRel e12 e2 p2 ->
+  splitLeqRel (Join e11 e12) e2 (p1 /\ p2)
+| splitAnyMeet (e1 e21 e22 : lexp A) (p1 p2 : Prop) :
+  splitLeqRel e1 e21 p1 ->
+  splitLeqRel e1 e22 p2 ->
+  splitLeqRel e1 (Meet e21 e22) (p1 /\ p2)
+| splitVarJoin (a : A) (e21 e22 : lexp A) (p1 p2 : Prop) :
+  splitLeqRel (Var a) e21 p1 ->
+  splitLeqRel (Var a) e22 p2 ->
+  splitLeqRel (Var a) (Join e21 e22) (p1 \/ p2)
+| splitMeetVar (e11 e12 e2 : lexp A) (p1 p2 : Prop) :
+  splitLeqRel e11 e2 p1 ->
+  splitLeqRel e12 e2 p2 ->
+  splitLeqRel (Meet e11 e12) e2 (p1 \/ p2)
+| splitMeetJoin (e11 e12 e21 e22 : lexp A) (p1 p2 p3 p4 : Prop) :
+  splitLeqRel e11 (Join e21 e22) p1 ->
+  splitLeqRel e12 (Join e21 e22) p2 ->
+  splitLeqRel (Meet e11 e12) e21 p3 ->
+  splitLeqRel (Meet e11 e12) e22 p4 ->
+  splitLeqRel (Meet e11 e12) (Join e21 e22) (p1 \/ p2 \/ p3 \/ p4).
+
+(* splitLeqRel in the form of a nested Coq fixpoint *)
+Fixpoint splitLeq {A : Set} `{Lattice A} (e1 : lexp A) : lexp A -> Prop :=
   fix splitLeq' (e2 : lexp A) : Prop :=
     match e1, e2 with
     | Var a1, Var a2 => leq_lat a1 a2
@@ -556,21 +583,156 @@ Fixpoint splitLeq {A : Set} {_:Lattice A} (e1 : lexp A) : lexp A -> Prop :=
     | Meet e11 e12, Join e21 e22 => splitLeq e11 e2 \/ splitLeq e12 e2 \/ splitLeq' e21 \/ splitLeq' e22
     end.
 
+Lemma splitRelDec0 {A : Set} `{Lattice A} : forall e1 e2 : lexp A, forall p : Prop,
+  splitLeq e1 e2 = p -> splitLeqRel e1 e2 p.
+Proof.
+  induction e1; induction e2; try sauto lq:on inv:lexp.
+Qed.
+
+Require Import ssreflect.
+
+
+Lemma splitRelDec1 {A : Set} `{Lattice A} : forall e1 e2 : lexp A, forall p : Prop,
+    splitLeqRel e1 e2 p -> p -> splitLeq e1 e2.
+Proof.
+  intros.
+  induction H1; try qauto depth:1 inv:lexp.
+  - destruct e1; try qauto depth:1 inv:lexp.
+    simpl.
+    move : H2 => [Hp1 Hp2].
+    specialize (IHsplitLeqRel1 Hp1).
+    specialize (IHsplitLeqRel2 Hp2).
+    have h1 : splitLeq e1_1 e21 /\ splitLeq e1_2 e21 by
+      simpl in IHsplitLeqRel1; qauto  q: on l: on inv: lexp.
+    have h2 : splitLeq e1_1 e22 /\ splitLeq e1_2 e22 by
+      simpl in IHsplitLeqRel2; qauto  q: on l: on inv: lexp.
+    split.
+    +
+
+
+
+(* destruct e1_1. *)
+(*       * simpl. destruct e21, e22; sfirstorder. *)
+(*       * simpl. destruct e21, e22; qauto lq: on depth: 1. *)
+(*       * simpl. *)
+(*         simpl in h1. *)
+(*         simpl in h2. *)
+(*         have : splitLeq e1_1_1 e21 /\ splitLeq e1_1_2 e21. *)
+
+
+
+
+
+
+
+Hint Resolve
+  meet_commutative
+  meet_associative
+  meet_absorptive
+  meet_idempotent
+  join_commutative
+  join_associative
+  join_absorptive
+  join_idempotent : lat_db.
+Hint Unfold leq_lat : lat_db.
+
+Definition leq_lat' {A : Set} {_:Lattice A} (e1 e2 : A) := join e1 e2 = e2.
+
+
+Lemma leq_lat_leq_lat'_iff {A : Set} {_:Lattice A} :
+  forall e1 e2, leq_lat e1 e2 <-> leq_lat' e1 e2.
+Proof.
+  move => e1 e2.
+  split.
+  - rewrite /leq_lat /leq_lat' => H.
+    by rewrite -H join_commutative meet_commutative join_absorptive.
+  - rewrite /leq_lat /leq_lat' => H.
+    by rewrite -H meet_absorptive.
+Qed.
+
+Lemma leq_lat_refl {A : Set} {_:Lattice A} (e : A) : leq_lat e e.
+Proof.
+  qauto db:lat_db.
+Qed.
+
+Lemma leq_lat_trans {A : Set} {_:Lattice A} (e1 e2 e3 : A) : leq_lat e1 e2 -> leq_lat e2 e3 -> leq_lat e1 e3.
+Proof.
+  unfold leq_lat.
+  intros.
+  rewrite <- H1.
+  rewrite meet_associative.
+  rewrite H2.
+  reflexivity.
+Qed.
+
+Lemma leq_lat_antisym {A : Set} {_:Lattice A} (e1 e2 : A) :
+  leq_lat e1 e2 -> leq_lat e2 e1 -> e1 = e2.
+Proof.
+  intros.
+  unfold leq_lat in *.
+  rewrite meet_commutative in H1.
+  congruence.
+Qed.
+
+Lemma leq_meet_iff {A : Set} {_:Lattice A} (e1 e2 e3 : A) :
+  leq_lat e1 (meet e2 e3) <-> leq_lat e1 e2 /\ leq_lat e1 e3.
+Proof.
+  split.
+  - unfold leq_lat.
+    intros.
+    split.
+    + by rewrite -H1
+       {1}meet_associative
+       {1}meet_associative
+       [meet e3 _]meet_commutative
+       -[meet e2 _]meet_associative
+       meet_idempotent.
+    + by rewrite -H1
+       {1}meet_associative
+       {1}meet_associative
+       meet_idempotent.
+  - move => [H1 H2];
+      rewrite /leq_lat -meet_associative H1 H2 //.
+Qed.
+
+Lemma leq_join_iff {A : Set} {_:Lattice A} (e2 e3 e1 : A) :
+  leq_lat (join e2 e3) e1 <-> leq_lat e2 e1 /\ leq_lat e3 e1.
+Proof.
+  repeat rewrite leq_lat_leq_lat'_iff /leq_lat'.
+  split.
+  - move => H1.
+    split.
+    + rewrite -H1
+       {1}join_associative
+       {1}join_associative
+       [join e3 _]join_commutative
+       -[join e2 _]join_associative
+          join_idempotent
+      //.
+    + rewrite -H1
+       -join_associative
+       [join e3 _]join_commutative
+       [join _ e3]join_associative
+       join_idempotent
+      //.
+  - move => [H1 H2].
+    rewrite join_associative H2 H1 //.
+Qed.
+
+Local Hint Resolve leq_meet_iff : split_db.
+
+(* Transforming goal *)
 Theorem splitLeq_sound {A : Set} {_:Lattice A} (e1 e2 : lexp A) :
   splitLeq e1 e2 -> leq_lat (denoteLexp e1) (denoteLexp e2).
 Proof.
-    Hint Resolve
-      meet_associative
-      meet_absorptive
-      meet_idempotent
-      join_commutative
-      join_associative
-      join_absorptive
-      join_idempotent .
-    Hint Unfold leq_lat.
-    induction e1 ; induction e2.
+  induction e1.
+  - induction e2; intuition.
+    sfirstorder use:leq_meet_iff.
+
     - auto.
-    - intros.
-      unfold leq_lat.
-      simpl.
-      rewrite meet_
+    - sfirstorder use:leq_meet_iff.
+    - sfirstorder use:leq_join_iff.
+
+Admitted.
+Theorem splitLeq_complete {A : Set} {_:Lattice A} (e1 e2 : lexp A) :
+   leq_lat (denoteLexp e1) (denoteLexp e2) -> splitLeq e1 e2.
