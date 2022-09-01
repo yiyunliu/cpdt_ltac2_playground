@@ -540,38 +540,7 @@ Fixpoint lexp_size {A : Set} (e : lexp A) :=
   | Join e1 e2 => 1 + lexp_size e1 + lexp_size e2
   end.
 
-(* Split a <= b into multiple small constraints *)
-Require Coq.Program.Wf.
 
-Local Obligation Tactic := try (sauto).
-
-Inductive splitLeqRel {A : Set} {H:Lattice A} : lexp A -> lexp A -> Prop -> Prop :=
-| splitVarVar (a1 a2 : A) :
-  splitLeqRel (Var a1) (Var a2) (leq_lat a1 a2)
-| splitJoinAny (e11 e12 e2 : lexp A) (p1 p2 : Prop) :
-  splitLeqRel e11 e2 p1 ->
-  splitLeqRel e12 e2 p2 ->
-  splitLeqRel (Join e11 e12) e2 (p1 /\ p2)
-| splitAnyMeet (e1 e21 e22 : lexp A) (p1 p2 : Prop) :
-  splitLeqRel e1 e21 p1 ->
-  splitLeqRel e1 e22 p2 ->
-  splitLeqRel e1 (Meet e21 e22) (p1 /\ p2)
-| splitVarJoin (a : A) (e21 e22 : lexp A) (p1 p2 : Prop) :
-  splitLeqRel (Var a) e21 p1 ->
-  splitLeqRel (Var a) e22 p2 ->
-  splitLeqRel (Var a) (Join e21 e22) (p1 \/ p2)
-| splitMeetVar (e11 e12 e2 : lexp A) (p1 p2 : Prop) :
-  splitLeqRel e11 e2 p1 ->
-  splitLeqRel e12 e2 p2 ->
-  splitLeqRel (Meet e11 e12) e2 (p1 \/ p2)
-| splitMeetJoin (e11 e12 e21 e22 : lexp A) (p1 p2 p3 p4 : Prop) :
-  splitLeqRel e11 (Join e21 e22) p1 ->
-  splitLeqRel e12 (Join e21 e22) p2 ->
-  splitLeqRel (Meet e11 e12) e21 p3 ->
-  splitLeqRel (Meet e11 e12) e22 p4 ->
-  splitLeqRel (Meet e11 e12) (Join e21 e22) (p1 \/ p2 \/ p3 \/ p4).
-
-(* splitLeqRel in the form of a nested Coq fixpoint *)
 Fixpoint splitLeq {A : Set} `{Lattice A} (e1 : lexp A) : lexp A -> Prop :=
   fix splitLeq' (e2 : lexp A) : Prop :=
     match e1, e2 with
@@ -583,47 +552,7 @@ Fixpoint splitLeq {A : Set} `{Lattice A} (e1 : lexp A) : lexp A -> Prop :=
     | Meet e11 e12, Join e21 e22 => splitLeq e11 e2 \/ splitLeq e12 e2 \/ splitLeq' e21 \/ splitLeq' e22
     end.
 
-Lemma splitRelDec0 {A : Set} `{Lattice A} : forall e1 e2 : lexp A, forall p : Prop,
-  splitLeq e1 e2 = p -> splitLeqRel e1 e2 p.
-Proof.
-  induction e1; induction e2; try sauto lq:on inv:lexp.
-Qed.
-
 Require Import ssreflect.
-
-
-Lemma splitRelDec1 {A : Set} `{Lattice A} : forall e1 e2 : lexp A, forall p : Prop,
-    splitLeqRel e1 e2 p -> p -> splitLeq e1 e2.
-Proof.
-  intros.
-  induction H1; try qauto depth:1 inv:lexp.
-  - destruct e1; try qauto depth:1 inv:lexp.
-    simpl.
-    move : H2 => [Hp1 Hp2].
-    specialize (IHsplitLeqRel1 Hp1).
-    specialize (IHsplitLeqRel2 Hp2).
-    have h1 : splitLeq e1_1 e21 /\ splitLeq e1_2 e21 by
-      simpl in IHsplitLeqRel1; qauto  q: on l: on inv: lexp.
-    have h2 : splitLeq e1_1 e22 /\ splitLeq e1_2 e22 by
-      simpl in IHsplitLeqRel2; qauto  q: on l: on inv: lexp.
-    split.
-    +
-
-
-
-(* destruct e1_1. *)
-(*       * simpl. destruct e21, e22; sfirstorder. *)
-(*       * simpl. destruct e21, e22; qauto lq: on depth: 1. *)
-(*       * simpl. *)
-(*         simpl in h1. *)
-(*         simpl in h2. *)
-(*         have : splitLeq e1_1_1 e21 /\ splitLeq e1_1_2 e21. *)
-
-
-
-
-
-
 
 Hint Resolve
   meet_commutative
@@ -719,7 +648,19 @@ Proof.
     rewrite join_associative H2 H1 //.
 Qed.
 
-Local Hint Resolve leq_meet_iff : split_db.
+(* The other direction is not true.... *)
+Lemma leq_join_prime {A : Set} {_:Lattice A} (e1 e2 e3 : A) :
+  leq_lat e1 e2 \/ leq_lat e1 e3 -> leq_lat e1 (join e2 e3).
+Proof.
+  rewrite !leq_lat_leq_lat'_iff !/leq_lat'.
+  sauto lq: on use: join_associative.
+Qed.
+
+Lemma leq_meet_prime {A : Set} {_:Lattice A} (e1 e2 e3 : A) :
+  leq_lat e1 e3 \/ leq_lat e2 e3 -> leq_lat (meet e1 e2) e3.
+Proof.
+  hfcrush l: on q: on use: meet_associative, meet_commutative.
+Qed.
 
 (* Transforming goal *)
 Theorem splitLeq_sound {A : Set} {_:Lattice A} (e1 e2 : lexp A) :
@@ -727,7 +668,35 @@ Theorem splitLeq_sound {A : Set} {_:Lattice A} (e1 e2 : lexp A) :
 Proof.
   induction e1.
   - induction e2; intuition.
-    sfirstorder use:leq_meet_iff.
+    * sfirstorder use:leq_meet_iff.
+    * sfirstorder use:leq_join_prime.
+  - destruct e2.
+    * simpl.
+      sfirstorder use:leq_meet_prime.
+    * clear IHe1_1 IHe1_2.
+      remember (Meet e2_1 e2_2) as e2.
+      induction e2; subst.
+      inversion Heqe2.
+      inversion Heqe2; subst; clear Heqe2.
+
+
+
+      move => H1.
+      have h1 : splitLeq (Meet e1_1 e1_2) e2_1 /\
+                  splitLeq (Meet e1_1 e1_2) e2_2 by
+        sfirstorder inv:lexp.
+      simpl.
+      rewrite leq_meet_iff.
+      split.
+      ** apply IHe2_1.
+
+
+
+
+
+
+
+
 
     - auto.
     - sfirstorder use:leq_meet_iff.
