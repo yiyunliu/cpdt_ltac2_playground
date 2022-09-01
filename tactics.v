@@ -480,3 +480,97 @@ Module Type monoid.
   Qed.
 
 End monoid.
+
+Class Lattice (A : Set) := {
+    meet : A -> A -> A;
+    join : A -> A -> A;
+    meet_commutative : forall a b, meet a b = meet b a;
+    meet_associative : forall a b c, meet (meet a b) c = meet a (meet b c);
+    meet_absorptive : forall a b, meet a (join a b) = a;
+    meet_idempotent : forall a, meet a a = a;
+    join_commutative : forall a b, join a b = join b a;
+    join_associative: forall a b c, join (join a b) c = join a (join b c);
+    join_absorptive : forall a b, join a (meet a b) = a;
+    join_idempotent : forall a, join a a = a;
+}.
+
+Definition leq_lat {A : Set} {_:Lattice A} (a : A) (b : A) :=
+  meet a b = a.
+
+Inductive LH :=
+| L : LH
+| H : LH.
+
+Set Default Proof Mode "Classic".
+#[refine, export] Instance LH_Lattice : Lattice LH := {
+    meet := fun x y =>
+              match x with
+              | L => L
+              | _ => y
+              end ;
+    join := fun x y =>
+              match x with
+              | H => H
+              | _ => y
+              end;
+  }.
+Proof.
+  all:try solve [qauto inv:LH].
+Qed.
+
+Inductive lexp (A : Set) : Set :=
+| Var : A -> lexp A
+| Meet : lexp A -> lexp A -> lexp A
+| Join : lexp A -> lexp A -> lexp A.
+Arguments Var {A}.
+Arguments Meet {A}.
+Arguments Join {A}.
+
+Fixpoint denoteLexp {A : Set} {_:Lattice A} (e : lexp A) :=
+  match e with
+  | Var a => a
+  | Meet e1 e2 => meet (denoteLexp e1) (denoteLexp e2)
+  | Join e1 e2 => join (denoteLexp e1) (denoteLexp e2)
+  end.
+
+Fixpoint lexp_size {A : Set} (e : lexp A) :=
+  match e with
+  | Var _ => 0
+  | Meet e1 e2 => 1 + lexp_size e1 + lexp_size e2
+  | Join e1 e2 => 1 + lexp_size e1 + lexp_size e2
+  end.
+
+(* Split a <= b into multiple small constraints *)
+Require Coq.Program.Wf.
+
+Local Obligation Tactic := try (sauto).
+
+Fixpoint splitLeq {A : Set} {_:Lattice A} (e1 : lexp A) : lexp A -> Prop :=
+  fix splitLeq' (e2 : lexp A) : Prop :=
+    match e1, e2 with
+    | Var a1, Var a2 => leq_lat a1 a2
+    | Join e11 e12, _ => splitLeq e11 e2 /\ splitLeq e12 e2
+    | _, Meet e21 e22 => splitLeq' e21 /\ splitLeq' e22
+    | Var _, Join e21 e22 => splitLeq' e21 \/ splitLeq' e22
+    | Meet e11 e12, Var _ => splitLeq e11 e2 \/ splitLeq e12 e2
+    | Meet e11 e12, Join e21 e22 => splitLeq e11 e2 \/ splitLeq e12 e2 \/ splitLeq' e21 \/ splitLeq' e22
+    end.
+
+Theorem splitLeq_sound {A : Set} {_:Lattice A} (e1 e2 : lexp A) :
+  splitLeq e1 e2 -> leq_lat (denoteLexp e1) (denoteLexp e2).
+Proof.
+    Hint Resolve
+      meet_associative
+      meet_absorptive
+      meet_idempotent
+      join_commutative
+      join_associative
+      join_absorptive
+      join_idempotent .
+    Hint Unfold leq_lat.
+    induction e1 ; induction e2.
+    - auto.
+    - intros.
+      unfold leq_lat.
+      simpl.
+      rewrite meet_
