@@ -665,9 +665,13 @@ Proof.
 Qed.
 
 
-Create HintDb leq_meet_join_props.
-#[export]Hint Resolve
-  leq_meet_iff : leq_meet_join_props.
+(*  *)
+(* Create HintDb leq_meet_join_props. *)
+(* #[export]Hint Resolve *)
+(*   leq_meet_iff *)
+(*   leq_join_iff *)
+(*   leq_meet_prime *)
+(*   leq_join_prime: leq_meet_join_props. *)
 
 
 (* Transforming goal *)
@@ -687,36 +691,3 @@ Proof.
   - hauto lq: on rew: off use: leq_join_prime, leq_meet_prime.
   - hauto l:on rew: off use:leq_join_iff.
 Qed.
-
-
-
-
-
-
-
-
-
-      move => H1.
-      have h1 : splitLeq (Meet e1_1 e1_2) e2_1 /\
-                  splitLeq (Meet e1_1 e1_2) e2_2 by
-        sfirstorder inv:lexp.
-      simpl.
-      rewrite leq_meet_iff.
-      split.
-      ** apply IHe2_1.
-
-
-
-
-
-
-
-
-
-    - auto.
-    - sfirstorder use:leq_meet_iff.
-    - sfirstorder use:leq_join_iff.
-
-Admitted.
-Theorem splitLeq_complete {A : Set} {_:Lattice A} (e1 e2 : lexp A) :
-   leq_lat (denoteLexp e1) (denoteLexp e2) -> splitLeq e1 e2.
