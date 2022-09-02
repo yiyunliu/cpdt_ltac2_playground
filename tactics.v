@@ -540,17 +540,19 @@ Fixpoint lexp_size {A : Set} (e : lexp A) :=
   | Join e1 e2 => 1 + lexp_size e1 + lexp_size e2
   end.
 
+From Equations Require Import Equations.
 
-Fixpoint splitLeq {A : Set} `{Lattice A} (e1 : lexp A) : lexp A -> Prop :=
-  fix splitLeq' (e2 : lexp A) : Prop :=
-    match e1, e2 with
-    | Var a1, Var a2 => leq_lat a1 a2
-    | Join e11 e12, _ => splitLeq e11 e2 /\ splitLeq e12 e2
-    | _, Meet e21 e22 => splitLeq' e21 /\ splitLeq' e22
-    | Var _, Join e21 e22 => splitLeq' e21 \/ splitLeq' e22
-    | Meet e11 e12, Var _ => splitLeq e11 e2 \/ splitLeq e12 e2
-    | Meet e11 e12, Join e21 e22 => splitLeq e11 e2 \/ splitLeq e12 e2 \/ splitLeq' e21 \/ splitLeq' e22
-    end.
+Derive NoConfusion for lexp.
+Derive Subterm for lexp.
+
+#[tactic="sfirstorder"] Equations splitLeq {A : Set} `{Lattice A} (e1 : lexp A) (e2 : lexp A) : Prop
+  by wf (lexp_size e1 + lexp_size e2) lt :=
+  splitLeq (Var a1) (Var a2) => leq_lat a1 a2;
+  splitLeq (Join e11 e12) e2 => splitLeq e11 e2 /\ splitLeq e12 e2;
+  splitLeq e1 (Meet e21 e22) => splitLeq e1 e21 /\ splitLeq e1 e22;
+  splitLeq (Var a) (Join e21 e22) => splitLeq (Var a) e21 \/ splitLeq (Var a) e22;
+  splitLeq (Meet e11 e12) (Var a) => splitLeq e11 (Var a) \/ splitLeq e12 (Var a);
+  splitLeq (Meet e11 e12) (Join e21 e22) => splitLeq e11 (Join e21 e22) \/ splitLeq e12 (Join e21 e22) \/ splitLeq (Meet e11 e12) e21 \/ splitLeq (Meet e11 e12) e22.
 
 Require Import ssreflect.
 
@@ -662,22 +664,35 @@ Proof.
   hfcrush l: on q: on use: meet_associative, meet_commutative.
 Qed.
 
+
+Create HintDb leq_meet_join_props.
+#[export]Hint Resolve
+  leq_meet_iff : leq_meet_join_props.
+
+
 (* Transforming goal *)
-Theorem splitLeq_sound {A : Set} {_:Lattice A} (e1 e2 : lexp A) :
+Theorem splitLeq_sound {A : Set} {H:Lattice A} (e1 e2 : lexp A) :
   splitLeq e1 e2 -> leq_lat (denoteLexp e1) (denoteLexp e2).
 Proof.
-  induction e1.
-  - induction e2; intuition.
-    * sfirstorder use:leq_meet_iff.
-    * sfirstorder use:leq_join_prime.
-  - destruct e2.
-    * simpl.
-      sfirstorder use:leq_meet_prime.
-    * clear IHe1_1 IHe1_2.
-      remember (Meet e2_1 e2_2) as e2.
-      induction e2; subst.
-      inversion Heqe2.
-      inversion Heqe2; subst; clear Heqe2.
+  intros.
+  Check splitLeq_graph_correct.
+  have h0 := splitLeq_graph_correct _ H e1 e2.
+  remember (splitLeq e1 e2) as p.
+  induction h0 using splitLeq_graph_rect.
+  - trivial.
+  - hauto l:on rew: off use:leq_meet_iff.
+  - hauto lq: on rew: off use: leq_join_prime.
+  - hauto lq: on rew: off use: leq_meet_prime.
+  - hauto l: on use: leq_meet_iff.
+  - hauto lq: on rew: off use: leq_join_prime, leq_meet_prime.
+  - hauto l:on rew: off use:leq_join_iff.
+Qed.
+
+
+
+
+
+
 
 
 
