@@ -167,7 +167,6 @@ Ltac2 tuple_plus_one xy :=
 
 Ltac2 Eval tuple_plus_one '(1,2).
 
-Ltac2 Notation x(self) "++" y(self) := Message.concat x y.
 
 
 From Coq Require Import Lia.
@@ -516,7 +515,7 @@ Set Default Proof Mode "Classic".
   }.
 Proof.
   all:try solve [qauto inv:LH].
-Qed.
+Defined.
 
 Inductive lexp (A : Set) : Set :=
 | Var : A -> lexp A
@@ -556,7 +555,7 @@ Derive Subterm for lexp.
 
 Require Import ssreflect.
 
-Hint Resolve
+Local Hint Resolve
   meet_commutative
   meet_associative
   meet_absorptive
@@ -565,7 +564,7 @@ Hint Resolve
   join_associative
   join_absorptive
   join_idempotent : lat_db.
-Hint Unfold leq_lat : lat_db.
+Local Hint Unfold leq_lat : lat_db.
 
 Definition leq_lat' {A : Set} {_:Lattice A} (e1 e2 : A) := join e1 e2 = e2.
 
@@ -690,4 +689,33 @@ Proof.
   - hauto l: on use: leq_meet_iff.
   - hauto lq: on rew: off use: leq_join_prime, leq_meet_prime.
   - hauto l:on rew: off use:leq_join_iff.
+Qed.
+
+Ltac2 rec reify_lexp (e : constr) :=
+  match! e with
+  | meet ?a1 ?a2 =>
+    let e1 := reify_lexp a1 in
+    let e2 := reify_lexp a2 in
+    '(Meet $e1 $e2)
+  | join ?a1 ?a2 =>
+    let e1 := reify_lexp a1 in
+    let e2 := reify_lexp a2 in
+    '(Join $e1 $e2)
+  | ?e => '(Var $e)
+  end.
+
+Ltac2 Eval reify_lexp '(join (meet H L) L).
+
+Ltac2 simplify_lattice_goal () :=
+  lazy_match! goal with
+  | [|- leq_lat ?a1 ?a2] =>
+    let e1 := reify_lexp a1 in
+    let e2 := reify_lexp a2 in
+    apply (splitLeq_sound $e1 $e2); ltac1:(simp splitLeq)
+  end.
+
+Example test_lattice (a b : LH) : leq_lat (meet a (meet b L) ) (join b b).
+Proof.
+  ltac2:(simplify_lattice_goal ()).
+  intuition.
 Qed.
