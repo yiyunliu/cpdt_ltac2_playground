@@ -183,7 +183,7 @@ Local Ltac2 lia_ltac1 () := ltac1:(lia).
 Ltac2 Notation "lia" := lia_ltac1 ().
 
 
-From Hammer Require Import Tactics.
+From Hammer Require Import Tactics Hammer.
 
 Local Ltac2 best_ltac1 () := ltac1:(best).
 
@@ -549,9 +549,16 @@ Derive Subterm for lexp.
   splitLeq (Var a1) (Var a2) => leq_lat a1 a2;
   splitLeq (Join e11 e12) e2 => splitLeq e11 e2 /\ splitLeq e12 e2;
   splitLeq e1 (Meet e21 e22) => splitLeq e1 e21 /\ splitLeq e1 e22;
-  splitLeq (Var a) (Join e21 e22) => splitLeq (Var a) e21 \/ splitLeq (Var a) e22;
-  splitLeq (Meet e11 e12) (Var a) => splitLeq e11 (Var a) \/ splitLeq e12 (Var a);
-  splitLeq (Meet e11 e12) (Join e21 e22) => splitLeq e11 (Join e21 e22) \/ splitLeq e12 (Join e21 e22) \/ splitLeq (Meet e11 e12) e21 \/ splitLeq (Meet e11 e12) e22.
+  splitLeq e1 (Join e21 e22) => splitLeq e1 e21 \/ splitLeq e1 e22 \/ (leq_lat (denoteLexp e1) (denoteLexp (Join e21 e22))) ;
+                               splitLeq (Meet e11 e12) e2 => splitLeq e11 e2 \/ splitLeq e12 e2 \/ (leq_lat (denoteLexp (Meet e11 e12)) (denoteLexp e2)).
+
+
+#[tactic="sfirstorder"] Equations splitLeqForward {A : Set} `{Lattice A} (e1 : lexp A) (e2 : lexp A) : Prop
+  by wf (lexp_size e1 + lexp_size e2) lt :=
+  splitLeqForward (Var a1) (Var a2) => leq_lat a1 a2;
+  splitLeqForward (Join e11 e12) e2 => splitLeqForward e11 e2 /\ splitLeqForward e12 e2;
+  splitLeqForward e1 (Meet e21 e22) => splitLeqForward e1 e21 /\ splitLeqForward e1 e22;
+  splitLeqForward e1 e2 => leq_lat (denoteLexp e1) (denoteLexp e2).
 
 Require Import ssreflect.
 
@@ -628,7 +635,7 @@ Qed.
 Lemma leq_join_iff {A : Set} {_:Lattice A} (e2 e3 e1 : A) :
   leq_lat (join e2 e3) e1 <-> leq_lat e2 e1 /\ leq_lat e3 e1.
 Proof.
-  repeat rewrite leq_lat_leq_lat'_iff /leq_lat'.
+  rewrite !leq_lat_leq_lat'_iff !/leq_lat'.
   split.
   - move => H1.
     split.
@@ -663,22 +670,11 @@ Proof.
   hfcrush l: on q: on use: meet_associative, meet_commutative.
 Qed.
 
-
-(*  *)
-(* Create HintDb leq_meet_join_props. *)
-(* #[export]Hint Resolve *)
-(*   leq_meet_iff *)
-(*   leq_join_iff *)
-(*   leq_meet_prime *)
-(*   leq_join_prime: leq_meet_join_props. *)
-
-
 (* Transforming goal *)
 Theorem splitLeq_sound {A : Set} {H:Lattice A} (e1 e2 : lexp A) :
   splitLeq e1 e2 -> leq_lat (denoteLexp e1) (denoteLexp e2).
 Proof.
   intros.
-  Check splitLeq_graph_correct.
   have h0 := splitLeq_graph_correct _ H e1 e2.
   remember (splitLeq e1 e2) as p.
   induction h0 using splitLeq_graph_rect.
@@ -691,8 +687,46 @@ Proof.
   - hauto l:on rew: off use:leq_join_iff.
 Qed.
 
+Theorem splitLeq_complete {A : Set} {H:Lattice A} (e1 e2 : lexp A) :
+  leq_lat (denoteLexp e1) (denoteLexp e2) -> splitLeq e1 e2.
+Proof.
+  intros.
+  have h0 := splitLeq_graph_correct _ H e1 e2.
+  remember (splitLeq e1 e2) as p.
+  induction h0 using splitLeq_graph_rect.
+  - trivial.
+  - hauto l:on rew: off use:leq_meet_iff.
+  - hauto lq: on rew: off use: leq_join_prime.
+  - hauto lq: on rew: off use: leq_meet_prime.
+  - hauto l: on use: leq_meet_iff.
+  - tauto.
+  - hauto l:on use:leq_join_iff.
+Qed.
+
+Theorem splitLeqForward_complete {A : Set} {H:Lattice A} (e1 e2 : lexp A) :
+  leq_lat (denoteLexp e1) (denoteLexp e2) -> splitLeqForward e1 e2.
+Proof.
+  intros.
+  have h0 := splitLeqForward_graph_correct _ H e1 e2.
+  remember (splitLeqForward e1 e2) as p.
+  induction h0 using splitLeqForward_graph_rect.
+  - trivial.
+  - hauto l:on rew: off use:leq_meet_iff.
+  - hauto lq: on rew: off use: leq_join_prime.
+  - hauto lq: on rew: off use: leq_meet_prime.
+  - hauto l: on use: leq_meet_iff.
+  - tauto.
+  - hauto l:on use:leq_join_iff.
+Qed.
+
+Theorem splitLeq_iff {A : Set} {H:Lattice A} (e1 e2 : lexp A) :
+  leq_lat (denoteLexp e1) (denoteLexp e2) <-> splitLeq e1 e2.
+Proof.
+  hauto lq: on use: @splitLeq_sound, @splitLeq_complete.
+Qed.
+
 Ltac2 rec reify_lexp (e : constr) :=
-  match! e with
+  lazy_match! e with
   | meet ?a1 ?a2 =>
     let e1 := reify_lexp a1 in
     let e2 := reify_lexp a2 in
@@ -706,16 +740,36 @@ Ltac2 rec reify_lexp (e : constr) :=
 
 Ltac2 Eval reify_lexp '(join (meet H L) L).
 
-Ltac2 simplify_lattice_goal () :=
+Ltac2 simplify_lattice_hyp (id : ident) (ty : constr) : unit :=
+  lazy_match! ty with
+  | leq_lat ?a1 ?a2 =>
+      let e1 := reify_lexp a1 in
+      let e2 := reify_lexp a2 in
+      apply (splitLeqForward_complete $e1 $e2) in $id;
+      ltac1:(h1 |- simp splitLeqForward in h1) (Ltac1.of_ident id);
+      simpl in $id
+  | _ => clear id
+  end.
+
+Ltac2 simplify_lattice_hyps () : unit :=
+  List.iter
+    (fun (id, _, ty) =>
+       simplify_lattice_hyp id ty)
+    (Control.hyps ()).
+
+Ltac2 simplify_lattice_goal () : unit :=
   lazy_match! goal with
   | [|- leq_lat ?a1 ?a2] =>
     let e1 := reify_lexp a1 in
     let e2 := reify_lexp a2 in
     apply (splitLeq_sound $e1 $e2); ltac1:(simp splitLeq)
+  | [|- leq_lat ?a1 ?a2]
   end.
 
-Example test_lattice (a b : LH) : leq_lat (meet a (meet b L) ) (join b b).
+Set Default Proof Mode "Ltac2".
+Example test_lattice (a b : LH) : leq_lat (meet (meet a (meet b L) ) b) (join(join b H) b).
 Proof.
-  ltac2:(simplify_lattice_goal ()).
-  intuition.
+  ltac1:(have H : leq_lat L b /\ leq_lat L a by qauto; move => H).
+  simplify_lattice_goal().
+  ltac1:(tauto).
 Qed.
