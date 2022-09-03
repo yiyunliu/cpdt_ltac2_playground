@@ -1,75 +1,27 @@
+From Ltac2 Require Import Ltac2.
 Require Import Coq.Lists.List.
 Import ListNotations.
-
-Ltac find_if :=
-  match goal with
-  | [|- if ?e then _ else _] => destruct e
-  end.
-
-Theorem hmm : forall (a b c : bool),
-    if a
-    then if b
-         then True
-         else True
-    else if c
-         then True
-         else True.
-Proof.
-  intros.
-  (* every successful call to repeat_if will automatically cause a *)
-(*   simplification *)
-  repeat find_if; constructor.
-Qed.
-
-Ltac test_fail :=
-  match goal with
-  (* fail is a synonym for fail 0? *)
-  (* if we use fail 0, match will simply go to the next branch *)
-  (* if we changed it to fail 1, then the entire match goal ... would fail *)
-  | _ => fail 0
-  | _ => intros
-  end.
-
-Parameter P Q : Prop.
-
-Theorem id_prop : P -> P.
-Proof.
-  test_fail.
-  assumption.
-Qed.
-
-Theorem test : P -> (P -> Q) -> Q.
-Proof.
-  test_fail.
-  generalize (H0 H).
-  trivial.
-Qed.
-(* locally bound variables and unification variables *)
-(* https://stackoverflow.com/questions/61795038/ltac-unification-variable-containing-locally-bound-variables *)
-
-
-From Ltac2 Require Import Ltac2.
 
 Ltac2 idtac () := ().
 
 Ltac2 hello_world () := Message.print (Message.of_string "Debugging info").
 
 Goal True.
-
   hello_world ().
 Abort.
 
 Ltac2 Eval hello_world ().
 
-
 Ltac2 Eval Message.print (Message.of_constr '(3 + 4)).
 
-Ltac2 bar () := let x := '(3 + 4) in constr:($x + 5).
+(* Scoping : See which x is being used *)
 
+(* constr and ' are similar, except the latter allows evars. I prefer ' because it is less typing *)
+(* $ is antiquotation. It allows you to refer to Ltac2 variables when inside a '(...), which normally expects a Gallina variable *)
+Ltac2 bar () := let x := '(3 + 4) in constr:($x + 5).
 Ltac2 bar' () := let x := '(3 + 4) in '($x + 5).
 
 Ltac2 Eval bar().
-
 Ltac2 Eval bar'().
 
 Section with_x.
@@ -79,6 +31,10 @@ Section with_x.
   (* whatever goes in ltac2: must be an effect *)
   (* which is why this does not work *)
 
+  (* @x creates a new identifier with the string "x" *)
+  (* Fresh.in_goal takes an identifier and creates a new identifier
+  that has the input identifier as prefix but is fresh from the
+  context *)
   Ltac2 Eval Fresh.in_goal @x.
   Ltac2 Eval Fresh.in_goal @y.
 
@@ -123,8 +79,8 @@ Goal nat.
   exact ltac2:(Control.refine (fun _ => foo'' ())).
 Qed.
 
-
-Ltac2 rec map t f ls :=
+(* ls is a Gallina list *)
+Ltac2 rec map (t : constr) (f : constr -> constr) (ls : constr) :=
   match! ls with
   | nil => '(@nil $t)
   | ?x :: ?ls => let ls := map t f ls in
@@ -160,23 +116,10 @@ Ltac2 tuple_plus_one xy :=
   | (?x, ?y) => '($x + 1, $y + 1)
   end.
 
-(* so you can match Gallina tuples, but then what does the *)
-(* documentation mean when it says you can't match on tuples? Ltac2 *)
-(* doesn't really have a tuple data type of its own so I don't know what *)
-(* else it refers to *)
-
 Ltac2 Eval tuple_plus_one '(1,2).
 
 
-
 From Coq Require Import Lia.
-
-
-
-
-
-
-
 
 Local Ltac2 lia_ltac1 () := ltac1:(lia).
 
@@ -195,7 +138,6 @@ Proof.
 Qed.
 
 
-
 Ltac length ls :=
   match ls with
   | nil => O
@@ -203,12 +145,12 @@ Ltac length ls :=
               constr:(S l)
   end.
 
-(* Goal False. *)
-(*   let n := length (cons 1 (cons 2 (cons 3 nil))) in *)
-(*   pose n. *)
+Goal False.
+  let n := '(length (cons 1 (cons 2 (cons 3 nil)))) in
+  pose (H := $n); simpl in H.
+Abort.
 
-Require Import Coq.Lists.List.
-
+(* same map function but implemented in ltac1 *)
 Ltac map T f :=
   (* f is an ltac function from gallina terms to gallina terms *)
   (* ls is a gallina term *)
@@ -223,13 +165,16 @@ Ltac map T f :=
     end
   in map'.
 
-(* Goal False. *)
-(*   let n := map nat ltac:(fun x => constr:(S x)) (cons 1 (cons 2 (cons 3 nil))) in *)
-(*   pose n. *)
-(* Abort. *)
+(* switch back to ltac1 mdoe as the default *)
+Set Default Proof Mode "Classic".
+Goal False.
+  let n := map nat ltac:(fun x => constr:(S x)) (cons 1 (cons 2 (cons 3 nil))) in
+  pose (H := n); simpl in H.
+Abort.
 
 
-
+(* switch to ltac2 mode as the default *)
+Set Default Proof Mode "Ltac2".
 Theorem simple_eq : forall x, x = x + 0 + 0.
 Proof.
   intros x.
@@ -257,7 +202,7 @@ Proof.
   auto with db.
 Qed.
 
-
+(* Record types *)
 Ltac2 Type sauto_opts :=
   { inv : bool
   ; lq : bool }.
@@ -266,10 +211,6 @@ Ltac2 sauto_defopts : sauto_opts := {inv := true; lq := true}.
 
 Ltac2 Eval Int.equal (Int.add 1 2) 3.
 
-(* Print simple_eq. *)
-
-(* Ltac2 length ls := *)
-
 
 Set Default Proof Mode "Classic".
 Theorem swap {A B : Prop} : A * B -> B * A.
@@ -277,67 +218,7 @@ Proof.
   tauto.
 Qed.
 
-
-Module Type GROUP.
-  Parameter G : Set.
-  Parameter f : G -> G -> G.
-  Parameter id : G.
-  Parameter i : G -> G.
-
-  Axiom assoc : forall a b c, f (f a b) c = f a (f b c).
-  Axiom ident : forall a, f id a = a.
-  Axiom inverse : forall a, f (i a) a = id.
-End GROUP.
-
-Module Type GROUP_THEOREMS.
-  Declare Module M : GROUP.
-  Axiom ident' : forall a, M.f a M.id = a.
-  Axiom inverse' : forall a, M.f a (M.i a) = M.id.
-  Axiom unique_ident : forall id', (forall a, M.f id' a = a) -> id' = M.id.
-End GROUP_THEOREMS.
-
-Module Type GROUP_THEOREMS_F (M : GROUP).
-  Axiom ident' : forall a, M.f a M.id = a.
-  Axiom inverse' : forall a, M.f a (M.i a) = M.id.
-  Axiom unique_ident : forall id', (forall a, M.f id' a = a) -> id' = M.id.
-End GROUP_THEOREMS_F.
-
-Module Type GROUP_THEOREMS'.
-  Declare Module M : GROUP.
-
-  Set Default Proof Mode "Ltac2".
-  Theorem inverse' : forall a, M.f a (M.i a) = M.id.
-  Proof.
-    Import M.
-    intros.
-    rewrite <- (ident (f a (i a))).
-    rewrite <- (inverse (f a (i a))) at 1.
-    do 2 (rewrite assoc).
-    rewrite <- (assoc (i a) a (i a)).
-    rewrite inverse.
-    rewrite ident.
-    apply inverse.
-  Qed.
-
-  Theorem ident' : forall a, M.f a M.id = a.
-  Proof.
-    intros a.
-    rewrite <- (inverse a).
-    rewrite <- assoc.
-    rewrite inverse'.
-    apply ident.
-  Qed.
-
-  Theorem unique_ident : forall id', (forall a, M.f id' a = a) -> id' = M.id.
-  Proof.
-    intros.
-    rewrite <- (H id).
-    symmetry.
-    apply ident'.
-  Qed.
-
-End GROUP_THEOREMS'.
-
+(* tautology solver *)
 Inductive taut : Set :=
 | TautTrue : taut
 | TautAnd : taut -> taut -> taut
@@ -395,6 +276,7 @@ Qed.
 
 Print true_galore.
 
+(* monoid simplifier *)
 Module Type monoid.
   Parameter A : Set.
   Parameter e : A.
@@ -480,6 +362,8 @@ Module Type monoid.
 
 End monoid.
 
+
+(* Lattice solver *)
 Class Lattice (A : Set) := {
     meet : A -> A -> A;
     join : A -> A -> A;
@@ -541,9 +425,6 @@ Fixpoint lexp_size {A : Set} (e : lexp A) :=
 
 From Equations Require Import Equations.
 
-Derive NoConfusion for lexp.
-Derive Subterm for lexp.
-
 #[tactic="sfirstorder"] Equations splitLeq {A : Set} `{Lattice A} (e1 : lexp A) (e2 : lexp A) : Prop
   by wf (lexp_size e1 + lexp_size e2) lt :=
   splitLeq (Var a1) (Var a2) => leq_lat a1 a2;
@@ -562,19 +443,7 @@ Derive Subterm for lexp.
 
 Require Import ssreflect.
 
-Local Hint Resolve
-  meet_commutative
-  meet_associative
-  meet_absorptive
-  meet_idempotent
-  join_commutative
-  join_associative
-  join_absorptive
-  join_idempotent : lat_db.
-Local Hint Unfold leq_lat : lat_db.
-
 Definition leq_lat' {A : Set} {_:Lattice A} (e1 e2 : A) := join e1 e2 = e2.
-
 
 Lemma leq_lat_leq_lat'_iff {A : Set} {_:Lattice A} :
   forall e1 e2, leq_lat e1 e2 <-> leq_lat' e1 e2.
@@ -589,7 +458,7 @@ Qed.
 
 Lemma leq_lat_refl {A : Set} {_:Lattice A} (e : A) : leq_lat e e.
 Proof.
-  qauto db:lat_db.
+  sauto.
 Qed.
 
 Lemma leq_lat_trans {A : Set} {_:Lattice A} (e1 e2 e3 : A) : leq_lat e1 e2 -> leq_lat e2 e3 -> leq_lat e1 e3.
@@ -738,9 +607,9 @@ Ltac2 rec reify_lexp (e : constr) :=
   | ?e => '(Var $e)
   end.
 
-Ltac2 Eval reify_lexp '(join (meet H L) L).
-
+(* takes as input a hypothesis' identifier and type; erase the hypothesis if it's not relevant to lattices *)
 Ltac2 simplify_lattice_hyp (id : ident) (ty : constr) : unit :=
+  simpl in $id;
   lazy_match! ty with
   | leq_lat ?a1 ?a2 =>
       let e1 := reify_lexp a1 in
@@ -748,28 +617,53 @@ Ltac2 simplify_lattice_hyp (id : ident) (ty : constr) : unit :=
       apply (splitLeqForward_complete $e1 $e2) in $id;
       ltac1:(h1 |- simp splitLeqForward in h1) (Ltac1.of_ident id);
       simpl in $id
+  (* TODO: keep the equalities about lattices *)
   | _ => clear id
   end.
 
 Ltac2 simplify_lattice_hyps () : unit :=
+  (* iterate through the list of hypotheses *)
   List.iter
     (fun (id, _, ty) =>
        simplify_lattice_hyp id ty)
     (Control.hyps ()).
 
 Ltac2 simplify_lattice_goal () : unit :=
+  simpl; intros;
   lazy_match! goal with
   | [|- leq_lat ?a1 ?a2] =>
     let e1 := reify_lexp a1 in
     let e2 := reify_lexp a2 in
     apply (splitLeq_sound $e1 $e2); ltac1:(simp splitLeq)
-  | [|- leq_lat ?a1 ?a2]
+  | [|- _] =>
+      ltac1:(exfalso)
   end.
 
+Ltac2 solve_lattice () :=
+  solve [
+  simplify_lattice_goal ();
+  simplify_lattice_hyps ();
+  ltac1:(eauto using leq_lat_refl, leq_lat_trans, leq_lat_antisym)].
+
+Ltac2 Notation "solve_lattice" := solve_lattice ().
+
 Set Default Proof Mode "Ltac2".
-Example test_lattice (a b : LH) : leq_lat (meet (meet a (meet b L) ) b) (join(join b H) b).
+
+(* make sure meet and join don't go away with simpl *)
+Opaque meet join.
+
+Example example_1  {A} `{Lattice A} : forall a b : A,
+  leq_lat a (join a b).
+Proof.
+  solve_lattice.
+Qed.
+
+Example example_2 (a b : LH) : leq_lat (meet (meet a (meet b L) ) b) (join(join b H) b).
 Proof.
   ltac1:(have H : leq_lat L b /\ leq_lat L a by qauto; move => H).
-  simplify_lattice_goal().
-  ltac1:(tauto).
+  solve_lattice.
 Qed.
+
+Lemma example_3 {A} `{Lattice A} : forall a b : A,
+  leq_lat (meet a b) (join a b).
+Proof. solve_lattice. Qed.
