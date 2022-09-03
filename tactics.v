@@ -655,15 +655,36 @@ Opaque meet join.
 Example example_1  {A} `{Lattice A} : forall a b : A,
   leq_lat a (join a b).
 Proof.
-  solve_lattice.
+  Time solve_lattice.
 Qed.
 
 Example example_2 (a b : LH) : leq_lat (meet (meet a (meet b L) ) b) (join(join b H) b).
 Proof.
   ltac1:(have H : leq_lat L b /\ leq_lat L a by qauto; move => H).
-  solve_lattice.
+  Time solve_lattice.
 Qed.
 
 Lemma example_3 {A} `{Lattice A} : forall a b : A,
   leq_lat (meet a b) (join a b).
-Proof. solve_lattice. Qed.
+Proof. Time solve_lattice. Qed.
+
+
+(* Backtracking primitives *)
+
+(* zero is like throw; plus is like catch; throw is like panic *)
+
+(* Ltac2 Eval *)
+(*     (fun _ => Control.zero (Tactic_failure (Some (Message.of_string "Unhandled exception")))) *)
+(*     (). *)
+
+Ltac2 Eval
+  Control.plus
+    (fun _ => Control.zero (Tactic_failure (Some (Message.of_string "Unhandled exception"))))
+    (fun _ => Message.print (Message.of_string "Handled")).
+
+Ltac2 Eval
+  Control.plus
+    (fun _ => Message.print (Message.of_string "Everything's fine"))
+    (fun _ => Message.print (Message.of_string "Handled")).
+(* I don't know why I would need "case", but presumbaly it allows you
+to take a computation and take out the exception handlers? *)
